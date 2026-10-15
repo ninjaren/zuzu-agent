@@ -1,6 +1,6 @@
 # ZuZu — 本機 AI 助理
 
-基於 [Ollama](https://ollama.com/) + qwen3:8b 的本機 AI 代理人，透過 Flask 提供網頁介面。支援 21 種工具呼叫、多 session 管理、RAG 語意記憶、圖片分析。
+基於 [Ollama](https://ollama.com/) + qwen3:8b 的本機 AI 代理人，透過 Flask 提供網頁介面。支援 28 種工具呼叫、多 session 管理、RAG 語意記憶、圖片分析。
 
 ---
 
@@ -15,11 +15,17 @@
 | 天氣查詢 | wttr.in 免費 API，支援中文城市名、英文、機場代碼，含逐時預報 |
 | 股票報價 | 台灣上市走證交所官方 API，美股走 Yahoo Finance，支援一次查多支 |
 | 大盤指數 | TWSE OpenAPI 台灣加權指數等主要指數 |
+| 虛擬貨幣 | CoinGecko 免費 API，BTC/ETH/SOL 等，含 24h 漲跌幅與市值 |
+| 匯率查詢 | open.er-api.com 免費端點，支援 USD/TWD/JPY/EUR 等主要貨幣 |
 | 計算機 | AST 白名單安全求值，支援四則、次方、sqrt/sin/log 等函式與 pi/e 常數 |
 | 股票圖表 | 繪製收盤折線 + MA5/MA20 + 成交量 PNG 圖，存於 data/charts/ |
 | 本機檔案 | 讀取、寫入、附加、刪除、搬移文字檔，限制在指定目錄內 |
+| CSV 讀取 | 自動偵測分隔符與編碼（UTF-8/Big5/CP950），適合券商對帳單 |
 | PDF 處理 | 全文讀取、分頁讀取、頁面切割另存 |
 | 圖片分析 | 透過 llava:7b 視覺模型分析圖片（拖拉上傳或本機路徑） |
+| 剪貼簿 | 讀取系統剪貼簿文字，讓使用者直接貼文字進對話 |
+| QR Code | 將文字或網址產生成 PNG，存於 data/qrcodes/ |
+| IP 查詢 | 查詢任意 IP 的地理位置、ISP、時區，不填則查本機對外 IP |
 | 多 session | 每個對話獨立儲存，可自由切換、重新命名、刪除 |
 | RAG 記憶 | ChromaDB 向量搜尋，讓模型能回憶過去相關對話 |
 | Think 模式 | 開啟 qwen3 的延伸思考，推理更嚴謹（速度較慢） |
@@ -43,9 +49,22 @@ ollama pull nomic-embed-text  # RAG 語意嵌入（可選，不用則關閉 RAG�
 
 ## 安裝與啟動
 
+### 必要套件
+
 ```bash
 pip install flask requests ddgs pypdf chromadb matplotlib
 ```
+
+### 選用套件（對應特定工具）
+
+```bash
+pip install pyperclip       # 剪貼簿工具
+pip install qrcode[pil]     # QR Code 產生工具
+```
+
+> 未安裝選用套件時工具仍可正常執行，呼叫時會回傳安裝提示而不是崩潰。
+
+### 啟動
 
 ```bash
 cd F:\python_project\ai_agent\qwen3_4b
@@ -71,17 +90,20 @@ qwen3_4b/
 │   ├── web.py          # search_web / browse_url / fetch_rss / extract_links
 │   ├── weather.py      # get_weather（wttr.in）
 │   ├── stock.py        # get_stock_price / get_market_index / get_multiple_stocks
+│   ├── crypto.py       # get_crypto_price / get_multiple_cryptos / get_exchange_rate
 │   ├── calculator.py   # calculate（AST 安全數學求值）
 │   ├── chart.py        # plot_stock_chart（matplotlib PNG 走勢圖）
 │   ├── file_ops.py     # list_files / read_file / write_file / append_file
-│   │                   # delete_file / move_file
+│   │                   # read_csv / delete_file / move_file
 │   ├── pdf_ops.py      # read_pdf / read_pdf_page / split_pdf
-│   └── vision.py       # analyze_image（llava:7b）
+│   ├── vision.py       # analyze_image（llava:7b）
+│   └── utils.py        # read_clipboard / create_qr_code / get_ip_info
 ├── templates/
 │   └── index.html      # 前端 UI（純 HTML + JS，無框架依賴）
 ├── sessions/           # session 對話紀錄（JSON，自動產生）
 ├── data/
-│   └── charts/         # 圖表 PNG 輸出目錄（自動產生）
+│   ├── charts/         # 股票走勢圖 PNG（自動產生）
+│   └── qrcodes/        # QR Code PNG（自動產生）
 └── chroma_db/          # RAG 向量資料庫（自動產生）
 ```
 
@@ -98,7 +120,7 @@ qwen3_4b/
 讀取靜態網頁文字內容（最多 5000 字）。
 - 速率限制：同一網域單次對話最多 5 次，每次間隔 1 秒
 - 黑名單：facebook、instagram、twitter、x.com、linkedin
-- **JS 偵測**：自動判斷 JS 動態渲染的空殼頁（Yahoo Finance、股票類等），直接回傳錯誤訊息提示改用 `search_web`，不需靠 system prompt 規則
+- **JS 偵測**：自動判斷 JS 動態渲染的空殼頁，回傳錯誤訊息提示改用 `search_web`
 
 **`fetch_rss(url, max_items=10)`**
 解析 RSS 2.0 或 Atom feed，速度比爬蟲快，且不觸發反爬蟲。
@@ -114,7 +136,6 @@ qwen3_4b/
 查詢即時天氣、今日溫度範圍、濕度、風速、UV 指數、逐時預報（每 3 小時）、未來兩天預報。
 - 使用 wttr.in 免費 API，不需 API Key
 - 支援中文城市名（台北）、英文（Taipei）或機場代碼（TPE）
-- 補充 `_WEATHER_ZH` 對照表修正 wttr.in 未翻譯的英文天氣描述
 
 ---
 
@@ -129,28 +150,34 @@ qwen3_4b/
 查詢台灣大盤：發行量加權股價指數、未含金融股指數、未含電子股指數、臺灣50指數。
 
 **`get_multiple_stocks(symbols)`**
-逗號分隔，一次最多 10 支，台股只需下載一次完整資料再過濾，不重複呼叫 API。
+逗號分隔，一次最多 10 支，台股批次下載一次完整資料再過濾，不重複呼叫 API。
+
+---
+
+### 虛擬貨幣與匯率（tools/crypto.py）
+
+**`get_crypto_price(symbol)`**
+查詢單一虛擬貨幣即時報價（美元＋台幣），含 24h 漲跌幅與市值。
+使用 CoinGecko 免費 API，不需 Key，支援 BTC/ETH/SOL/DOGE/XRP/ADA 等 25+ 幣種。
+
+**`get_multiple_cryptos(symbols)`**
+逗號分隔，一次最多 10 個，批次呼叫 CoinGecko。
+
+**`get_exchange_rate(from_currency, to_currency, amount)`**
+查詢即時匯率並換算金額。to_currency 填 `ALL` 可一次看常用貨幣（TWD/USD/EUR/JPY/CNY/HKD/GBP/KRW/SGD/AUD）一覽。
 
 ---
 
 ### 計算機（tools/calculator.py）
 
 **`calculate(expression)`**
-安全計算數學表達式，使用 Python AST 白名單解析，完全不使用 `eval()`，無法執行任意程式碼。
+安全計算數學表達式，使用 Python AST 白名單解析，完全不使用 `eval()`。
 
-支援運算子：`+ - * / // % **`（次方）
+支援運算子：`+ - * / // % **`
 
 支援函式：`sqrt` `log` `log2` `log10` `exp` `sin` `cos` `tan` `asin` `acos` `atan` `ceil` `floor` `factorial` `abs` `round`
 
-支援常數：`pi`（3.14159...）、`e`（2.71828...）、`tau`（6.28318...）
-
-```
-sqrt(144)       → 12
-sin(pi/6)       → 0.5
-log(100, 10)    → 2
-factorial(10)   → 3628800
-(100+200)*1.05  → 315
-```
+支援常數：`pi` `e` `tau`
 
 ---
 
@@ -162,10 +189,7 @@ factorial(10)   → 3628800
 - **資料來源**：Yahoo Finance 歷史 API（OHLCV），不需安裝 yfinance
 - **台股代碼**：純數字自動補 `.TW`（如 `2330` → `2330.TW`）
 - **圖表內容**：上方收盤折線 + MA5（橘）+ MA20（紫），下方成交量（漲綠跌紅）
-- **圖表風格**：深色主題，130 DPI，存至 `data/charts/`
 - **period 可選**：`1mo` / `3mo` / `6mo` / `1y` / `2y` / `5y`，預設 `3mo`
-
-圖片路徑可直接傳給 `analyze_image` 讓 llava:7b 進行技術分析。
 
 ---
 
@@ -179,6 +203,7 @@ factorial(10)   → 3628800
 | `read_file(path)` | 讀取文字檔全文 |
 | `write_file(path, content)` | 建立或覆寫檔案 |
 | `append_file(path, content)` | 在末尾附加內容 |
+| `read_csv(path, max_rows=50)` | 讀取 CSV，自動偵測分隔符與編碼（UTF-8/Big5/CP950） |
 | `delete_file(path)` | 永久刪除檔案（不含目錄） |
 | `move_file(src, dst)` | 搬移或重新命名，自動建立目標目錄 |
 
@@ -201,7 +226,21 @@ factorial(10)   → 3628800
 **`analyze_image(path, question)`**
 分析本機圖片，支援 jpg / png / gif / bmp / webp。
 內部切換到 `llava:7b` 模型處理，結果以文字回傳給 qwen3 繼續推理。
-網頁拖拉上傳的圖片由 `agent_runner` 在前處理階段直接呼叫，不走工具呼叫流程。
+
+---
+
+### 雜項工具（tools/utils.py）
+
+**`read_clipboard()`**
+讀取系統剪貼簿文字，讓使用者說「幫我分析剛複製的內容」時直接取用，不需重新貼文字。
+需要：`pip install pyperclip`
+
+**`create_qr_code(text, filename="")`**
+將文字或網址產生成 QR Code PNG 圖片，存至 `data/qrcodes/`，回傳路徑。
+需要：`pip install qrcode[pil]`
+
+**`get_ip_info(ip="")`**
+查詢 IP 的地理位置（國家、城市）、ISP 業者與時區。不填 ip 則查本機對外公網 IP。
 
 ---
 
@@ -320,7 +359,7 @@ str(p).startswith(str(workspace) + os.sep)
 ### 6. 台股 API 的民國年格式
 
 **問題**
-台灣證交所 OpenAPI 回傳的日期格式為民國年，例如 `"1151014"` 代表民國 115 年 10 月 14 日，直接顯示會讓使用者困惑。
+台灣證交所 OpenAPI 回傳的日期格式為民國年，例如 `"1151014"` 代表民國 115 年 10 月 14 日 = 2026-10-14，直接顯示會讓使用者困惑。
 
 **解法**
 加入 `_roc_to_ad()` 轉換函式，取前三位加 1911 換算成西元年：
@@ -329,22 +368,16 @@ def _roc_to_ad(roc_str: str) -> str:
     year = int(roc_str[:3]) + 1911
     return f"{year}-{roc_str[3:5]}-{roc_str[5:7]}"
 ```
-`"1151014"` → `"2026-10-14"`
 
 ---
 
 ### 7. 股票漲跌箭頭方向判斷錯誤
 
 **問題**
-初版用「收盤價 ≥ 開盤價」來決定顯示 ▲ 或 ▼，但這是當天內的震盪方向，不是相對昨日的漲跌。一支今日開高但比昨收還高的股票，可能因為收盤低於今日開盤就顯示 ▼，與實際漲跌相反。
+初版用「收盤價 ≥ 開盤價」來決定顯示 ▲ 或 ▼，但這是當天內的震盪方向，不是相對昨日的漲跌。
 
 **解法**
-改用 TWSE API 直接提供的 `Change` 欄位（正數=漲，負數=跌，0=平盤）：
-```python
-change = float(row["Change"].strip()) if row["Change"].strip() else 0.0
-arrow  = "▲" if change > 0 else ("▼" if change < 0 else "－")
-```
-同時加上 `isdigit()` 保護，避免 `TradeVolume` 空字串導致 `int()` 崩潰。
+改用 TWSE API 直接提供的 `Change` 欄位（正數=漲，負數=跌），同時加上 `isdigit()` 保護避免空字串造成 `int()` 崩潰。
 
 ---
 
@@ -357,9 +390,8 @@ arrow  = "▲" if change > 0 else ("▼" if change < 0 else "－")
 使用 Python `ast` 模組將表達式解析成語法樹，再遞迴求值，只允許白名單內的節點類型（數字常數、二元運算、一元運算、白名單函式呼叫），其他節點一律拒絕：
 ```python
 tree = ast.parse(expression, mode="eval")
-result = _eval_node(tree.body)   # 只遍歷白名單節點
+result = _eval_node(tree.body)
 ```
-`__import__("os")` 對應的是 `ast.Call` 節點，但函式名 `__import__` 不在 `_FUNCTIONS` 白名單，直接拋出 `ValueError`，不執行任何外部呼叫。
 
 ---
 
@@ -377,6 +409,7 @@ qwen3:8b 在同時需要「工具呼叫 + 深度分析 + 專業判斷」時容�
 
 - **JS 渲染頁面**：Yahoo Finance、鉅亨網等股票類網站以 JavaScript 動態載入資料，靜態 GET 拿不到實際內容。偵測到後會自動提示改用 `search_web`。
 - **股票資料時效**：TWSE OpenAPI 為當日收盤後更新，非即時報價；美股透過 Yahoo Finance 非官方 API，偶爾受限。
+- **虛擬貨幣 API 速率**：CoinGecko 免費層每分鐘約 30 次，連續大量查詢可能觸發 429 錯誤。
 - **模型能力上限**：qwen3:8b 適合資料收集與摘要，深度專業分析（財報解讀、複雜推理）建議使用者自行判斷。
 - **掃描 PDF**：無法提取文字，需搭配 OCR 工具（未內建）。
 - **圖片上傳大小**：受限於瀏覽器記憶體，超大圖片建議先壓縮。
