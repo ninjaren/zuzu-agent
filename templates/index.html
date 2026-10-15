@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZuZu</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 21px;
+      background: #111;
+      color: #ddd;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* ── 側邊欄 ── */
+    .sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: #0d0d0d;
+      border-right: 1px solid #222;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-top {
+      padding: 0.9rem 0.75rem 0.6rem;
+      flex-shrink: 0;
+    }
+
+    #new-btn {
+      width: 100%;
+      padding: 0.5rem;
+      background: #1e1e1e;
+      color: #ccc;
+      border: 1px solid #2a2a2a;
+      border-radius: 7px;
+      font-size: 0.87rem;
+      cursor: pointer;
+      text-align: left;
+    }
+    #new-btn:hover { background: #252525; color: #fff; }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.3rem 0.5rem;
+    }
+    .session-list::-webkit-scrollbar { width: 4px; }
+    .session-list::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.55rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      color: #888;
+      gap: 0.4rem;
+      user-select: none;
+    }
+    .session-item:hover { background: #1a1a1a; color: #ccc; }
+    .session-item.active { background: #1e1e1e; color: #eee; }
+
+    .session-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .del-btn {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .session-item:hover .del-btn { opacity: 1; }
+    .del-btn:hover { color: #e55; }
+
+    /* ── 聊天區 ── */
+    .chat-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 1.1rem 1.2rem 1rem;
+      gap: 0.75rem;
+    }
+
+    /* 置中內容欄，像 ChatGPT 一樣不撐滿全寬 */
+    .chat-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 980px;
+      width: 100%;
+      margin: 0 auto;
+      gap: 0.75rem;
+      overflow: hidden;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    h1 { font-size: 1.25rem; color: #bbb; font-weight: 600; }
+    .header-actions { display: flex; align-items: center; gap: 0.55rem; }
+
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: #666;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 0.28rem 0.6rem;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .toggle-wrap:has(input:checked) { border-color: #4a9e6b; color: #4a9e6b; }
+    .toggle-wrap input { display: none; }
+    .toggle-track {
+      width: 32px; height: 17px;
+      background: #333;
+      border-radius: 9px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .toggle-track::after {
+      content: "";
+      position: absolute;
+      width: 13px; height: 13px;
+      background: #666;
+      border-radius: 50%;
+      top: 2px; left: 2px;
+      transition: left 0.2s, background 0.2s;
+    }
+    input:checked + .toggle-track { background: #4a9e6b; }
+    input:checked + .toggle-track::after { left: 17px; background: #fff; }
+    .toggle-state { font-size: 0.75rem; min-width: 1.1rem; }
+
+    #clear-btn {
+      padding: 0.28rem 0.8rem;
+      background: transparent;
+      color: #555;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    #clear-btn:hover { color: #e55; border-color: #e55; }
+
+    #chat-log {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding-right: 6px;
+    }
+    #chat-log::-webkit-scrollbar { width: 6px; }
+    #chat-log::-webkit-scrollbar-track { background: #1a1a1a; }
+    #chat-log::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    #chat-log::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    .bubble {
+      max-width: 82%;
+      padding: 0.7rem 1.1rem;
+      border-radius: 10px;
+      font-size: 1rem;
+      line-height: 1.65;
+      word-break: break-word;
+    }
+    .bubble.user    { align-self: flex-end; max-width: 70%; background: #1a3a5c; color: #ddeeff; white-space: pre-wrap; border: 1px solid #2a5888; }
+    .bubble.assistant { align-self: flex-start; background: #161616; border: 1px solid #222; color: #ddd; }
+    .bubble.waiting { align-self: flex-start; background: #161616; border: 1px solid #222; color: #444; font-style: italic; }
+
+    /* Markdown */
+    .md { line-height: 1.6; }
+    .md h1,.md h2 { font-weight: 600; font-size: 1.15rem; margin: 0.55rem 0 0.25rem; }
+    .md h3,.md h4 { font-weight: 600; font-size: 1.05rem; margin: 0.4rem 0 0.15rem; }
+    .md p { margin: 0; line-height: 1.6; }
+    .md p + p { margin-top: 0.3rem; }
+    .md ul,.md ol { padding-left: 1.4rem; margin: 0.2rem 0; }
+    .md li { margin: 0.12rem 0; line-height: 1.6; }
+    .md strong { font-weight: 700; color: #eee; }
+    .md em { font-style: italic; color: #bbb; }
+    .md a { color: #5a9fd4; text-decoration: underline; }
+    .md a:hover { color: #7ab8e8; }
+    .md code { background: #222; color: #e0c080; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.86rem; }
+    .md pre { background: #1a1a1a; border: 1px solid #2a2a2a; padding: 0.5rem; border-radius: 6px; overflow-x: auto; margin: 0.25rem 0; }
+    .md hr { border: none; border-top: 1px solid #222; margin: 0.3rem 0; }
+
+    /* 思考過程 */
+    .think-block { margin-bottom: 0.4rem; }
+    .think-block summary { font-size: 0.78rem; color: #444; cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.3rem; }
+    .think-block summary::before { content: "▶"; font-size: 0.6rem; transition: transform 0.15s; }
+    .think-block[open] summary::before { transform: rotate(90deg); }
+    .think-block summary:hover { color: #666; }
+    .think-content { margin-top: 0.3rem; padding: 0.4rem 0.65rem; background: #131313; border-left: 2px solid #2a2a2a; font-size: 0.83rem; color: #555; white-space: pre-wrap; line-height: 1.45; }
+
+    textarea {
+      width: 100%;
+      padding: 0.7rem 0.85rem;
+      background: #161616;
+      color: #ddd;
+      border: 1px solid #252525;
+      border-radius: 8px;
+      font-size: 1rem;
+      resize: vertical;
+      min-height: 72px;
+      font-family: inherit;
+      outline: none;
+      flex-shrink: 0;
+    }
+    textarea:focus { border-color: #383838; }
+    textarea::placeholder { color: #383838; }
+    textarea.drag-over { border-color: #4a9e6b; background: #141f17; }
+
+    /* 圖片預覽區 */
+    #image-preview-wrap {
+      display: none;
+      position: relative;
+      width: fit-content;
+      flex-shrink: 0;
+    }
+    #image-preview {
+      max-height: 120px;
+      max-width: 220px;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      object-fit: cover;
+    }
+    #image-clear {
+      position: absolute;
+      top: -6px; right: -6px;
+      width: 20px; height: 20px;
+      background: #333;
+      border: none;
+      border-radius: 50%;
+      color: #aaa;
+      font-size: 0.7rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #image-clear:hover { background: #e55; color: #fff; }
+
+    /* 圖片上傳按鈕 */
+    #upload-btn {
+      padding: 0.6rem 0.8rem;
+      background: #1e1e1e;
+      color: #666;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #upload-btn:hover { color: #aaa; }
+
+    /* 對話中的圖片縮圖 */
+    .bubble-image { max-width: 200px; max-height: 150px; border-radius: 6px; display: block; margin-bottom: 0.4rem; }
+
+    .row { display: flex; gap: 0.65rem; align-items: center; flex-shrink: 0; }
+
+    #send-btn {
+      padding: 0.6rem 1.4rem;
+      background: #1e1e1e;
+      color: #bbb;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #send-btn:not(:disabled):hover { background: #2a2a2a; color: #fff; }
+
+    #status { font-size: 0.82rem; color: #444; }
+    .error-text { color: #e55 !important; }
+    #turns { margin-left: auto; font-size: 0.78rem; color: #383838; }
+
+    /* 右鍵選單 */
+    #ctx-menu {
+      display: none;
+      position: fixed;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 7px;
+      padding: 0.3rem 0;
+      z-index: 999;
+      min-width: 130px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    #ctx-menu button {
+      display: block;
+      width: 100%;
+      padding: 0.45rem 0.9rem;
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 0.85rem;
+      text-align: left;
+      cursor: pointer;
+    }
+    #ctx-menu button:hover { background: #2a2a2a; color: #fff; }
+    #ctx-menu button.danger:hover { background: #2a1a1a; color: #e55; }
+  </style>
+</head>
+<body>
+
+  <!-- 右鍵選單 -->
+  <div id="ctx-menu">
+    <button onclick="ctxRename()">✏️ 重新命名</button>
+    <button class="danger" onclick="ctxDelete()">✕ 刪除對話</button>
+  </div>
+
+  <!-- 側邊欄 -->
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <div style="font-size:1.1rem;font-weight:700;color:#ccc;margin-bottom:0.6rem;padding:0 0.1rem;">ZuZu</div>
+      <button id="new-btn" onclick="newSession()">＋ 新對話</button>
+    </div>
+    <div class="session-list" id="session-list"></div>
+  </div>
+
+  <!-- 聊天區 -->
+  <div class="chat-wrap">
+    <div class="header">
+      <h1 id="chat-title">ZuZu</h1>
+      <div class="header-actions">
+        <label class="toggle-wrap">
+          <input type="checkbox" id="think-toggle" onchange="updateToggleLabel()" checked>
+          <span class="toggle-track"></span>
+          思考模式
+          <span class="toggle-state" id="toggle-label">開</span>
+        </label>
+        <button id="clear-btn" onclick="clearSession()">清除記憶</button>
+      </div>
+    </div>
+
+    <div class="chat-body">
+      <div id="chat-log"></div>
+      <div id="image-preview-wrap">
+        <img id="image-preview" src="" alt="預覽">
+        <button id="image-clear" onclick="clearImage()" title="移除圖片">✕</button>
+      </div>
+      <textarea id="prompt" placeholder="輸入你的問題… (Enter 送出，Shift+Enter 換行，或直接拖放圖片)"></textarea>
+      <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+      <div class="row">
+        <button id="upload-btn" onclick="document.getElementById('file-input').click()" title="上傳圖片">🖼</button>
+        <button id="send-btn" onclick="sendPrompt()">送出</button>
+        <span id="status"></span>
+        <span id="turns"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    marked.use({ gfm: true });
+
+    // ── 圖片處理 ──
+    let pendingImageB64 = null;
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file) loadImageFile(file);
+      e.target.value = "";
+    }
+
+    function loadImageFile(file) {
+      if (!file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target.result;
+        pendingImageB64 = dataUrl.split(",")[1]; // 只取 base64 部分
+        document.getElementById("image-preview").src = dataUrl;
+        document.getElementById("image-preview-wrap").style.display = "block";
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearImage() {
+      pendingImageB64 = null;
+      document.getElementById("image-preview-wrap").style.display = "none";
+      document.getElementById("image-preview").src = "";
+    }
+
+    // 拖放支援
+    const promptEl2 = document.getElementById("prompt");
+    promptEl2.addEventListener("dragover",  e => { e.preventDefault(); promptEl2.classList.add("drag-over"); });
+    promptEl2.addEventListener("dragleave", ()  => promptEl2.classList.remove("drag-over"));
+    promptEl2.addEventListener("drop", e => {
+      e.preventDefault();
+      promptEl2.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file) loadImageFile(file);
+    });
+
+    const promptEl    = document.getElementById("prompt");
+    const logEl       = document.getElementById("chat-log");
+    const statusEl    = document.getElementById("status");
+    const turnsEl     = document.getElementById("turns");
+    const sendBtn     = document.getElementById("send-btn");
+    const thinkToggle = document.getElementById("think-toggle");
+    const toggleLabel = document.getElementById("toggle-label");
+    const sessionList = document.getElementById("session-list");
+    const chatTitle   = document.getElementById("chat-title");
+
+    let currentSid  = localStorage.getItem("currentSid") || null;
+    let ctxSid      = null;
+    const ctxMenu   = document.getElementById("ctx-menu");
+
+    // 右鍵選單
+    document.addEventListener("click", () => ctxMenu.style.display = "none");
+    document.addEventListener("contextmenu", e => {
+      if (!e.target.closest(".session-item")) ctxMenu.style.display = "none";
+    });
+
+    function showCtxMenu(e, sid) {
+      e.preventDefault();
+      e.stopPropagation();
+      ctxSid = sid;
+      ctxMenu.style.display = "block";
+      const x = Math.min(e.clientX, window.innerWidth  - 150);
+      const y = Math.min(e.clientY, window.innerHeight - 100);
+      ctxMenu.style.left = x + "px";
+      ctxMenu.style.top  = y + "px";
+    }
+
+    async function ctxRename() {
+      ctxMenu.style.display = "none";
+      const item = document.querySelector(`.session-item[data-sid="${ctxSid}"] .session-title`);
+      if (!item) return;
+      const oldTitle = item.textContent;
+      const newTitle = prompt("新名稱：", oldTitle);
+      if (!newTitle || newTitle.trim() === oldTitle) return;
+      await fetch(`/sessions/${ctxSid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle.trim() }),
+      });
+      item.textContent = newTitle.trim();
+      item.title = newTitle.trim();
+      if (ctxSid === currentSid) chatTitle.textContent = newTitle.trim();
+    }
+
+    async function ctxDelete() {
+      ctxMenu.style.display = "none";
+      await deleteSession(new Event("click"), ctxSid);
+    }
+
+    promptEl.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendPrompt();
+      }
+    });
+
+    function updateToggleLabel() {
+      toggleLabel.textContent = thinkToggle.checked ? "開" : "關";
+    }
+
+    // ── Session 管理 ──
+
+    async function loadSessions() {
+      const res  = await fetch("/sessions");
+      const list = await res.json();
+      sessionList.innerHTML = "";
+      if (list.length === 0) {
+        await newSession();
+        return;
+      }
+      list.forEach(s => renderSessionItem(s));
+      if (!currentSid || !list.find(s => s.id === currentSid)) {
+        await switchSession(list[0].id);
+      } else {
+        highlightSession(currentSid);
+        chatTitle.textContent = list.find(s => s.id === currentSid)?.title || "Qwen3:8b";
+      }
+    }
+
+    function renderSessionItem(s) {
+      const div = document.createElement("div");
+      div.className = "session-item" + (s.id === currentSid ? " active" : "");
+      div.dataset.sid = s.id;
+      div.innerHTML = `
+        <span class="session-title" title="${s.title}">${s.title}</span>
+        <button class="del-btn" title="刪除" onclick="deleteSession(event,'${s.id}')">✕</button>`;
+      div.addEventListener("click", () => switchSession(s.id));
+      div.addEventListener("contextmenu", e => showCtxMenu(e, s.id));
+      sessionList.appendChild(div);
+    }
+
+    function highlightSession(sid) {
+      document.querySelectorAll(".session-item").forEach(el => {
+        el.classList.toggle("active", el.dataset.sid === sid);
+      });
+    }
+
+    async function newSession() {
+      const res = await fetch("/sessions", { method: "POST" });
+      const s   = await res.json();
+      renderSessionItem(s);
+      await switchSession(s.id);
+    }
+
+    async function switchSession(sid) {
+      currentSid = sid;
+      localStorage.setItem("currentSid", sid);
+      highlightSession(sid);
+      logEl.innerHTML = "";
+      statusEl.textContent = "";
+      turnsEl.textContent  = "";
+
+      const res  = await fetch(`/sessions/${sid}/history`);
+      const msgs = await res.json();
+      msgs.forEach(m => addBubble(m.role, m.content));
+
+      // 更新標題
+      const item = document.querySelector(`.session-item[data-sid="${sid}"] .session-title`);
+      chatTitle.textContent = item ? item.textContent : "Qwen3:8b";
+    }
+
+    async function deleteSession(e, sid) {
+      e.stopPropagation();
+      if (!confirm("確定刪除這個對話？")) return;
+      await fetch(`/sessions/${sid}`, { method: "DELETE" });
+      const el = document.querySelector(`.session-item[data-sid="${sid}"]`);
+      if (el) el.remove();
+      if (currentSid === sid) {
+        currentSid = null;
+        await loadSessions();
+      }
+    }
+
+    async function clearSession() {
+      if (!currentSid) return;
+      await fetch(`/sessions/${currentSid}/clear`, { method: "POST" });
+      logEl.innerHTML = "";
+      statusEl.textContent = "記憶已清除";
+      turnsEl.textContent  = "";
+      const item = document.querySelector(`.session-item[data-sid="${currentSid}"] .session-title`);
+      if (item) item.textContent = "新對話";
+      chatTitle.textContent = "新對話";
+    }
+
+    // ── 對話 ──
+
+    function parseResponse(raw) {
+      const match = raw.match(/^<think>([\s\S]*?)<\/think>\s*/);
+      if (match) return { thinking: match[1].trim(), answer: raw.slice(match[0].length).trim() };
+      return { thinking: null, answer: raw.trim() };
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function addBubble(role, text) {
+      const div = document.createElement("div");
+      div.className = `bubble ${role}`;
+      if (role === "assistant") {
+        const { thinking, answer } = parseResponse(text);
+        if (thinking) {
+          const det = document.createElement("details");
+          det.className = "think-block";
+          det.innerHTML = `<summary>思考過程</summary><div class="think-content">${escHtml(thinking)}</div>`;
+          div.appendChild(det);
+        }
+        const md = document.createElement("div");
+        md.className = "md";
+        md.innerHTML = marked.parse(answer);
+        md.querySelectorAll("a").forEach(a => { a.target = "_blank"; a.rel = "noopener"; });
+        div.appendChild(md);
+      } else {
+        div.textContent = text;
+      }
+      logEl.appendChild(div);
+      div.scrollIntoView({ behavior: "smooth" });
+      return div;
+    }
+
+    async function sendPrompt() {
+      const text  = promptEl.value.trim();
+      const image = pendingImageB64;
+      if (!text && !image) return;
+      if (!currentSid) return;
+
+      sendBtn.disabled = true;
+      statusEl.textContent = image ? "分析圖片中…" : (thinkToggle.checked ? "深度思考中…" : "思考中…");
+      statusEl.className = "";
+      promptEl.value = "";
+
+      // 使用者泡泡：若有圖片先顯示縮圖
+      const userDiv = document.createElement("div");
+      userDiv.className = "bubble user";
+      if (image) {
+        const img = document.createElement("img");
+        img.src = "data:image/*;base64," + image;
+        img.className = "bubble-image";
+        userDiv.appendChild(img);
+      }
+      if (text) userDiv.appendChild(document.createTextNode(text));
+      logEl.appendChild(userDiv);
+      userDiv.scrollIntoView({ behavior: "smooth" });
+
+      clearImage();
+      const waitBubble = addBubble("waiting", image ? "分析圖片中…" : (thinkToggle.checked ? "深度思考中…" : "思考中…"));
+
+      try {
+        const body = { prompt: text, think: thinkToggle.checked };
+        if (image) body.image = image;
+        const res  = await fetch(`/sessions/${currentSid}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        waitBubble.remove();
+
+        if (data.error) {
+          addBubble("assistant", "⚠ " + data.error);
+          statusEl.textContent = "發生錯誤";
+          statusEl.className   = "error-text";
+        } else {
+          addBubble("assistant", data.response);
+          statusEl.textContent = "完成";
+          turnsEl.textContent  = `記憶 ${data.active_turns}／${data.total_turns} 輪`;
+
+          // 更新側邊欄標題（第一輪）
+          if (data.title) {
+            const item = document.querySelector(`.session-item[data-sid="${currentSid}"] .session-title`);
+            if (item) item.textContent = data.title;
+            chatTitle.textContent = data.title;
+          }
+        }
+      } catch (err) {
+        waitBubble.remove();
+        addBubble("assistant", "⚠ 網路錯誤：" + err.message);
+        statusEl.textContent = "失敗";
+        statusEl.className   = "error-text";
+      } finally {
+        sendBtn.disabled = false;
+        promptEl.focus();
+      }
+    }
+
+    // 初始化
+    loadSessions();
+  </script>
+</body>
+</html>
