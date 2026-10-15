@@ -1,4 +1,5 @@
 import os
+import csv
 from pathlib import Path
 
 # 所有檔案操作只允許在此目錄內，防止路徑穿越攻擊
@@ -86,6 +87,69 @@ def delete_file(path: str) -> str:
         return str(e)
     except Exception as e:
         return f"刪除失敗：{e}"
+
+
+def read_csv(path: str, max_rows: int = 50) -> str:
+    # 讀取 CSV 檔案並回傳結構化摘要（欄位名稱、資料筆數、前 N 行預覽）
+    # 自動嘗試 UTF-8 → Big5（台灣券商常見編碼）→ CP950
+    try:
+        p = _safe_path(path)
+        if not p.exists():
+            return f"檔案不存在：{p}"
+    except PermissionError as e:
+        return str(e)
+
+    # 依序嘗試常見編碼
+    content = None
+    for enc in ("utf-8-sig", "utf-8", "big5", "cp950"):
+        try:
+            content = p.read_text(encoding=enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if content is None:
+        return f"無法解碼 CSV 檔案（嘗試過 utf-8、big5、cp950）：{p}"
+
+    try:
+        # 自動偵測分隔符（逗號 vs 分號 vs Tab）
+        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t")
+        reader  = csv.DictReader(content.splitlines(), dialect=dialect)
+    except csv.Error:
+        reader = csv.DictReader(content.splitlines())
+
+    rows = list(reader)
+    if not rows:
+        return f"CSV 檔案是空的：{p}"
+
+    headers = list(rows[0].keys())
+    total   = len(rows)
+    preview = rows[:max_rows]
+
+    # 計算每欄最大寬度（用於對齊）
+    col_w = {h: max(len(h), max(len(str(r.get(h, ""))) for r in preview))
+             for h in headers}
+    # 限制單欄最大寬度 30，避免過長
+    col_w = {h: min(w, 30) for h, w in col_w.items()}
+
+    def fmt_row(row: dict) -> str:
+        return "  ".join(str(row.get(h, ""))[:col_w[h]].ljust(col_w[h]) for h in headers)
+
+    header_line = "  ".join(h.ljust(col_w[h]) for h in headers)
+    sep_line    = "  ".join("-" * col_w[h] for h in headers)
+    data_lines  = [fmt_row(r) for r in preview]
+
+    lines = [
+        f"【{p.name}】共 {total} 筆，{len(headers)} 個欄位",
+        f"欄位：{', '.join(headers)}",
+        "",
+        header_line,
+        sep_line,
+        *data_lines,
+    ]
+    if total > max_rows:
+        lines.append(f"...（僅顯示前 {max_rows} 筆，剩餘 {total - max_rows} 筆）")
+
+    return "\n".join(lines)
 
 
 def move_file(src: str, dst: str) -> str:
@@ -183,6 +247,31 @@ DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "read_csv",
+            "description": (
+                "讀取 CSV 檔案並回傳結構化摘要，包含欄位名稱、資料筆數與前 N 行預覽。"
+                "自動偵測分隔符與編碼（UTF-8、Big5、CP950），適合讀取券商對帳單、財務報表等。"
+                "只允許 F:\\python_project\\ai_agent 範圍內的路徑"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "CSV 檔案的完整路徑",
+                    },
+                    "max_rows": {
+                        "type": "integer",
+                        "description": "最多顯示幾行資料，預設 50",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "move_file",
             "description": "移動檔案或目錄到新路徑，也可用來重新命名。來源與目標都必須在 F:\\python_project\\ai_agent 範圍內",
             "parameters": {
@@ -203,6 +292,7 @@ IMPLEMENTATIONS = {
     "read_file":   read_file,
     "write_file":  write_file,
     "append_file": append_file,
+    "read_csv":    read_csv,
     "delete_file": delete_file,
     "move_file":   move_file,
 }
