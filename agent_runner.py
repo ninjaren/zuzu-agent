@@ -1,6 +1,6 @@
 import json
 import requests
-from config import MODEL, OLLAMA_URL, RECENT_TURNS, RAG_TOP_K, SYSTEM_PROMPT
+from config import MODEL, OLLAMA_URL, RECENT_TURNS, RAG_TOP_K, SYSTEM_PROMPT, VERIFY_ANSWER
 from tools import TOOLS, run_tool
 from tools.web import reset_browse_counts
 from tools.vision import analyze_image_b64
@@ -47,14 +47,38 @@ def build_messages(history: list, query: str, image_b64: str = None) -> list:
     return msgs
 
 
-def agent_loop(messages: list, think: bool) -> str:
+def _verify_answer(messages: list, answer: str, think: bool) -> str:
+    # 把第一次的答案再丟回模型做自我核查（不帶工具，純推理）
+    # 讓模型確認數字、邏輯、日期是否正確，有錯就更正，沒錯回原文
+    verify_messages = messages + [
+        {"role": "assistant", "content": answer},
+        {
+            "role": "user",
+            "content": (
+                "請重新確認以上回答是否正確。"
+                "重點檢查：數字計算、日期合理性、邏輯推導、工具資料引用。"
+                "若有錯誤，直接給出更正後的完整答案；"
+                "若答案正確，直接回覆原答案，不需要說「我確認了」或重複解釋。"
+            ),
+        },
+    ]
+    resp = requests.post(
+        OLLAMA_URL,
+        json={"model": MODEL, "messages": verify_messages, "stream": False, "think": think},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()["message"]["content"]
+
+
+def agent_loop(messages: list, think: bool, verify: bool = False) -> str:
     # 每次新對話重設 browse 計數器，讓新對話有完整的 5 次配額
     reset_browse_counts()
 
     # 持續呼叫 Ollama 直到模型不再要求工具，才回傳最終回答
     # 迴圈流程：
     #   模型回應 → 有 tool_calls → 執行工具 → 把結果加入訊息 → 再呼叫模型
-    #   模型回應 → 無 tool_calls → 回傳最終文字答案，結束迴圈
+    #   模型回應 → 無 tool_calls → 視 verify 決定是否再做一次自我核查，然後回傳
     while True:
         resp = requests.post(
             OLLAMA_URL,
@@ -67,7 +91,11 @@ def agent_loop(messages: list, think: bool) -> str:
 
         # 模型沒有要求工具 → 這是最終回答
         if not msg.get("tool_calls"):
-            return msg["content"]
+            answer = msg["content"]
+            # verify=True 時多一次自我核查，會多 3-8 秒但能抓到推理錯誤
+            if verify or VERIFY_ANSWER:
+                answer = _verify_answer(messages, answer, think)
+            return answer
 
         # 執行模型要求的每個工具，將結果以 role="tool" 訊息回傳給模型
         for tc in msg["tool_calls"]:

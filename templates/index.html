@@ -136,6 +136,8 @@
       transition: border-color 0.2s, color 0.2s;
     }
     .toggle-wrap:has(input:checked) { border-color: #4a9e6b; color: #4a9e6b; }
+    .toggle-wrap.verify:has(input:checked) { border-color: #b8892a; color: #b8892a; }
+    .toggle-wrap.verify input:checked + .toggle-track { background: #b8892a; }
     .toggle-wrap input { display: none; }
     .toggle-track {
       width: 32px; height: 17px;
@@ -351,6 +353,12 @@
           思考模式
           <span class="toggle-state" id="toggle-label">開</span>
         </label>
+        <label class="toggle-wrap verify" title="答完後再做一次自我核查，多花 3-8 秒，能抓到計算或邏輯錯誤">
+          <input type="checkbox" id="verify-toggle" onchange="updateVerifyLabel()">
+          <span class="toggle-track"></span>
+          驗證模式
+          <span class="toggle-state" id="verify-label">關</span>
+        </label>
         <button id="clear-btn" onclick="clearSession()">清除記憶</button>
       </div>
     </div>
@@ -418,8 +426,10 @@
     const statusEl    = document.getElementById("status");
     const turnsEl     = document.getElementById("turns");
     const sendBtn     = document.getElementById("send-btn");
-    const thinkToggle = document.getElementById("think-toggle");
-    const toggleLabel = document.getElementById("toggle-label");
+    const thinkToggle  = document.getElementById("think-toggle");
+    const toggleLabel  = document.getElementById("toggle-label");
+    const verifyToggle = document.getElementById("verify-toggle");
+    const verifyLabel  = document.getElementById("verify-label");
     const sessionList = document.getElementById("session-list");
     const chatTitle   = document.getElementById("chat-title");
 
@@ -475,6 +485,10 @@
 
     function updateToggleLabel() {
       toggleLabel.textContent = thinkToggle.checked ? "開" : "關";
+    }
+
+    function updateVerifyLabel() {
+      verifyLabel.textContent = verifyToggle.checked ? "開" : "關";
     }
 
     // ── Session 管理 ──
@@ -604,7 +618,8 @@
       if (!currentSid) return;
 
       sendBtn.disabled = true;
-      statusEl.textContent = image ? "分析圖片中…" : (thinkToggle.checked ? "深度思考中…" : "思考中…");
+      const baseStatus = image ? "分析圖片中…" : (thinkToggle.checked ? "深度思考中…" : "思考中…");
+      statusEl.textContent = verifyToggle.checked ? baseStatus + "（驗證模式）" : baseStatus;
       statusEl.className = "";
       promptEl.value = "";
 
@@ -622,10 +637,10 @@
       userDiv.scrollIntoView({ behavior: "smooth" });
 
       clearImage();
-      const waitBubble = addBubble("waiting", image ? "分析圖片中…" : (thinkToggle.checked ? "深度思考中…" : "思考中…"));
+      const waitBubble = addBubble("waiting", verifyToggle.checked ? baseStatus + "（驗證模式）" : baseStatus);
 
       try {
-        const body = { prompt: text, think: thinkToggle.checked };
+        const body = { prompt: text, think: thinkToggle.checked, verify: verifyToggle.checked };
         if (image) body.image = image;
         const res  = await fetch(`/sessions/${currentSid}/chat`, {
           method: "POST",

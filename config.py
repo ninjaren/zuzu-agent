@@ -8,6 +8,11 @@ VISION_MODEL = "llava:7b"
 # Ollama 本機 API 端點
 OLLAMA_URL   = "http://localhost:11434/api/chat"
 
+# ── 驗證模式 ──────────────────────────────────────
+# 開啟後 agent_loop 拿到答案後再呼叫一次模型做自我核查
+# 預設 False（可由前端 per-request 覆蓋，此為 server-side 預設值）
+VERIFY_ANSWER = False
+
 # ── Session 設定 ──────────────────────────────────
 # session 對話紀錄的儲存目錄，不存在時自動建立
 SESSIONS_DIR  = Path(__file__).parent / "sessions"

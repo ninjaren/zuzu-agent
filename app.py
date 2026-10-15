@@ -78,8 +78,9 @@ def clear_session(sid):
 def chat(sid):
     # 主要對話端點：接收使用者輸入，呼叫 agent_loop，回傳模型回答
     prompt    = request.json.get("prompt", "").strip()
-    think     = request.json.get("think", False)    # 是否開啟 think 模式（延伸思考）
-    image_b64 = request.json.get("image", None)     # 使用者上傳的圖片（base64 字串）
+    think     = request.json.get("think",  False)   # 是否開啟 think 模式（延伸思考）
+    verify    = request.json.get("verify", False)   # 是否開啟驗證模式（答完再核查一次）
+    image_b64 = request.json.get("image",  None)    # 使用者上傳的圖片（base64 字串）
     if not prompt and not image_b64:
         return jsonify({"error": "請輸入問題或上傳圖片"}), 400
 
@@ -87,7 +88,7 @@ def chat(sid):
     messages = build_messages(history, prompt, image_b64)
 
     try:
-        reply = agent_loop(messages, think)
+        reply = agent_loop(messages, think, verify)
 
         # 將本輪對話存入 session 紀錄與 RAG 向量資料庫
         turn_id = f"{sid}_turn_{len(history) // 2}"
