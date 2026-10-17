@@ -4,12 +4,18 @@ import requests
 from datetime import datetime
 from pathlib import Path
 
+try:
+    from config import OLLAMA_URL, MODEL as DEFAULT_MODEL
+except ImportError:
+    # 在套件外直接執行時的 fallback（例如單元測試）
+    OLLAMA_URL   = "http://localhost:11434/api/chat"
+    DEFAULT_MODEL = "qwen3:8b"
+
 # 報告輸出目錄與重複出現紀錄檔
 REPORT_DIR = Path(r"F:\python_project\ai_agent\data\weekly_github")
 SEEN_FILE  = REPORT_DIR / "seen.json"
 
 TRENDING_URL = "https://github.com/trending?since=weekly"
-OLLAMA_URL   = "http://localhost:11434/api/chat"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -102,7 +108,7 @@ def _parse_trending(html: str) -> list[dict]:
     return repos
 
 
-def _translate_batch(descriptions: list[str], model: str = "qwen3:8b") -> list[str]:
+def _translate_batch(descriptions: list[str], model: str = DEFAULT_MODEL) -> list[str]:
     # 批次翻譯描述成繁體中文（一次 API call，效率高於逐條翻譯）
     # 回傳與輸入等長的列表；失敗時回傳原文
     numbered = "\n".join(f"{i+1}. {d}" for i, d in enumerate(descriptions))
@@ -196,7 +202,7 @@ def get_github_trending(count: int = 10) -> str:
     return "\n".join(l for l in lines)
 
 
-def generate_weekly_report(model: str = "qwen3:8b") -> str:
+def generate_weekly_report(model: str = DEFAULT_MODEL) -> str:
     # 自動產生本週週報 .md 並寫入磁碟（供 app 啟動時背景呼叫）
     # 包含批次翻譯描述，不需要使用者手動觸發
     week      = _week_id()
@@ -228,7 +234,7 @@ def generate_weekly_report(model: str = "qwen3:8b") -> str:
         f"# GitHub 本週熱門專案 — {week}",
         f"\n> 資料來源：[GitHub Trending]({TRENDING_URL})（週增星數排名）  ",
         f"> 產生時間：{now_str}  ",
-        f"> 描述由 {model} 自動翻譯\n",
+        f"> 描述由 `{model}` 自動翻譯\n",
         "---\n",
     ]
 

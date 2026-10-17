@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime
+import os
 import threading
 import uuid
 import requests
@@ -20,10 +21,6 @@ def _startup_weekly_report():
         print(f"[weekly] {result}")
     except Exception as e:
         print(f"[weekly] 週報產生失敗：{e}")
-
-
-# 用 daemon thread：主程序退出時不阻塞
-threading.Thread(target=_startup_weekly_report, daemon=True).start()
 
 
 @app.route("/")
@@ -133,5 +130,9 @@ def chat(sid):
 
 
 if __name__ == "__main__":
-    # debug=True 開發時自動重載，正式部署應改為 debug=False
+    # debug=True 時 werkzeug reloader 會 fork：父 process 監控檔案、子 process 跑 Flask
+    # 子 process 的環境變數 WERKZEUG_RUN_MAIN="true"，只在子 process 啟動背景任務
+    # 避免兩個 process 同時呼叫 Ollama 翻譯（浪費資源且可能佔滿記憶體）
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        threading.Thread(target=_startup_weekly_report, daemon=True).start()
     app.run(host="127.0.0.1", port=5000, debug=True)

@@ -1,6 +1,6 @@
 # ZuZu — 本機 AI 助理
 
-基於 [Ollama](https://ollama.com/) + qwen3:8b 的本機 AI 代理人，透過 Flask 提供網頁介面。支援 28 種工具呼叫、多 session 管理、RAG 語意記憶、圖片分析。
+基於 [Ollama](https://ollama.com/) + qwen3:8b 的本機 AI 代理人，透過 Flask 提供網頁介面。支援 29 種工具呼叫、多 session 管理、RAG 語意記憶、圖片分析。
 
 ---
 
@@ -26,6 +26,7 @@
 | 剪貼簿 | 讀取系統剪貼簿文字，讓使用者直接貼文字進對話 |
 | QR Code | 將文字或網址產生成 PNG，存於 data/qrcodes/ |
 | IP 查詢 | 查詢任意 IP 的地理位置、ISP、時區，不填則查本機對外 IP |
+| GitHub 週報 | 抓取 GitHub 本週熱門 10 大專案，翻譯成繁體中文存成週報 .md；自動標記 🆕 首次上榜 / 🔁 連續上榜 N 週 |
 | 多 session | 每個對話獨立儲存，可自由切換、重新命名、刪除 |
 | RAG 記憶 | ChromaDB 向量搜尋，讓模型能回憶過去相關對話 |
 | Think 模式 | 開啟 qwen3 的延伸思考，推理更嚴謹（速度較慢） |
@@ -93,6 +94,7 @@ qwen3_4b/
 │   ├── crypto.py       # get_crypto_price / get_multiple_cryptos / get_exchange_rate
 │   ├── calculator.py   # calculate（AST 安全數學求值）
 │   ├── chart.py        # plot_stock_chart（matplotlib PNG 走勢圖）
+│   ├── github_trending.py  # get_github_trending / generate_weekly_report
 │   ├── file_ops.py     # list_files / read_file / write_file / append_file
 │   │                   # read_csv / delete_file / move_file
 │   ├── pdf_ops.py      # read_pdf / read_pdf_page / split_pdf
@@ -103,7 +105,8 @@ qwen3_4b/
 ├── sessions/           # session 對話紀錄（JSON，自動產生）
 ├── data/
 │   ├── charts/         # 股票走勢圖 PNG（自動產生）
-│   └── qrcodes/        # QR Code PNG（自動產生）
+│   ├── qrcodes/        # QR Code PNG（自動產生）
+│   └── weekly_github/  # GitHub 週報 .md 與 seen.json（自動產生）
 └── chroma_db/          # RAG 向量資料庫（自動產生）
 ```
 
@@ -241,6 +244,19 @@ qwen3_4b/
 
 **`get_ip_info(ip="")`**
 查詢 IP 的地理位置（國家、城市）、ISP 業者與時區。不填 ip 則查本機對外公網 IP。
+
+---
+
+### GitHub 週報工具（tools/github_trending.py）
+
+**`get_github_trending(count=10)`**
+抓取 [GitHub Trending（週增星數）](https://github.com/trending?since=weekly) 前 N 名，回傳英文原文資料，agent 收到後會翻譯並可存成 .md 週報。
+
+- 上榜標記：🆕 首次上榜 / 🔁 連續上榜 N 週（紀錄在 `data/weekly_github/seen.json`）
+- 專案名稱（`owner/repo` 格式）永遠保留英文，只翻譯描述
+- 每週以 ISO 週次命名（例如 `2026-W42.md`）
+
+**自動啟動**：Flask 啟動時，背景 thread 會自動偵測本週報告是否存在，若無則完整產生（抓取 + 批次翻譯 + 寫入 .md），不需手動觸發。
 
 ---
 
@@ -405,6 +421,47 @@ qwen3:8b 在同時需要「工具呼叫 + 深度分析 + 專業判斷」時容�
 
 ---
 
+### 10. GitHub Trending 的重複專案如何處理
+
+**問題**
+GitHub 上的熱門專案可能連續多週出現（例如某個 AI 框架爆紅後維持 4 週），若每週的報告都完整列出，使用者看到的是重複資訊，無法快速辨認哪些是真正的新面孔。
+
+**失敗方案**
+直接過濾掉重複的專案（只顯示未出現過的）。問題是熱度可能持續，直接過濾會讓使用者以為那週「沒什麼新趨勢」，資訊反而不完整。
+
+**解法**
+保留全部 10 名，但加入標記：
+- 🆕 首次上榜：本週第一次出現
+- 🔁 連續上榜 N 週：已累計出現 N 次（第幾次出現一目瞭然）
+
+出現紀錄存在 `data/weekly_github/seen.json`，以 `owner/repo` 為 key，記錄首次週次與全部出現週次列表。
+
+---
+
+### 11. GitHub 週報翻譯策略：批次 vs 逐條
+
+**問題**
+每個專案的描述都是英文，需要翻譯成繁體中文才對使用者友善。若對每筆描述單獨呼叫 Ollama 一次，10 個專案需要 10 次 API round-trip，加上每次模型啟動的 overhead，總時間太長。
+
+**解法**
+一次呼叫傳入所有 10 條描述（格式：`1. xxx\n2. xxx\n...`），要求模型逐條輸出翻譯，最後解析出 N 個結果。速度快約 5-8 倍。
+失敗安全：模型若少回傳幾條，自動用原文補齊；若整個呼叫失敗，全部退回英文原文，不中斷週報寫入。
+
+---
+
+### 12. 週報產生的時機：排程 vs 口令 vs 啟動自動檢查
+
+**三種方案**
+| 方案 | 做法 | 缺點 |
+|------|------|------|
+| Windows 工作排程器 | 每週一定時呼叫腳本 | 需設定排程；ZuZu 不開也會跑 |
+| 使用者口令觸發 | 說「查本週熱門」就呼叫工具 | 依賴使用者主動，容易忘記 |
+| **啟動自動檢查（採用）** | Flask 啟動時背景 thread 偵測本週 .md 是否存在，不存在就產生 | 需要 Ollama 在背景，首次啟動多約 2 分鐘 |
+
+採用第三方案，符合「工具開著就能用，不需要記得去觸發」的本機助理使用習慣。
+
+---
+
 ## 自我驗證機制
 
 ### 方法一：一次核查（已實作）
@@ -441,3 +498,5 @@ agent_loop 拿到最終答案後，將答案丟回模型再問一次：
 - **模型能力上限**：qwen3:8b 適合資料收集與摘要，深度專業分析（財報解讀、複雜推理）建議使用者自行判斷。
 - **掃描 PDF**：無法提取文字，需搭配 OCR 工具（未內建）。
 - **圖片上傳大小**：受限於瀏覽器記憶體，超大圖片建議先壓縮。
+- **GitHub Trending 反爬蟲**：GitHub 頁面偶爾更改 HTML 結構，可能導致解析失敗（回傳 0 筆），此時工具會回傳提示訊息，不會崩潰。
+- **週報首次啟動時間**：新一週首次啟動 ZuZu 時，背景 thread 需約 1-3 分鐘完成翻譯，期間可正常使用其他功能。
