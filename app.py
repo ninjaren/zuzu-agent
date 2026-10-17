@@ -1,14 +1,29 @@
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime
+import threading
 import uuid
 import requests
 
 from config import SESSIONS_DIR
 from session_manager import load_meta, save_meta, load_session, save_session, delete_session
 from agent_runner import build_messages, agent_loop
+from tools.github_trending import generate_weekly_report
 import rag
 
 app = Flask(__name__)
+
+
+def _startup_weekly_report():
+    # 啟動時背景執行：若本週週報尚未產生，自動抓取並翻譯後寫入 .md
+    try:
+        result = generate_weekly_report()
+        print(f"[weekly] {result}")
+    except Exception as e:
+        print(f"[weekly] 週報產生失敗：{e}")
+
+
+# 用 daemon thread：主程序退出時不阻塞
+threading.Thread(target=_startup_weekly_report, daemon=True).start()
 
 
 @app.route("/")

@@ -3,3 +3,5 @@ requests>=2.31
 chromadb>=0.5
 duckduckgo-search>=6.0
 pypdf>=4.0
+beautifulsoup4>=4.12
+matplotlib>=3.8
