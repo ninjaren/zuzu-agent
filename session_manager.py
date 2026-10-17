@@ -23,7 +23,10 @@ def save_meta(meta: dict):
 
 
 def session_file(sid: str) -> Path:
-    # 回傳指定 session 的對話紀錄檔路徑（每個 session 一個 JSON 檔）
+    # 回傳指定 session 的對話紀錄檔路徑
+    # 儲存策略：每個 session 一個獨立 JSON 檔（{sid}.json）
+    # 所有 session 的標題與建立時間集中存在 _meta.json
+    # 分開儲存的好處：列出 session 清單時只讀一個小 metadata 檔，不需載入全部對話紀錄
     return SESSIONS_DIR / f"{sid}.json"
 
 

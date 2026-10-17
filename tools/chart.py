@@ -18,7 +18,9 @@ YF_HEADERS = {
     "Accept": "application/json",
 }
 
+# 允許的查詢區間（傳入非法值時 fallback 至 3mo）
 VALID_PERIODS   = {"1mo", "3mo", "6mo", "1y", "2y", "5y"}
+# interval 目前固定用 1d（日線），保留供未來擴充週線用
 VALID_INTERVALS = {"1d", "1wk"}
 
 
@@ -99,20 +101,28 @@ def plot_stock_chart(symbol: str, period: str = "3mo") -> str:
     ma20 = _moving_avg(closes, 20)
 
     # ── 繪圖 ─────────────────────────────────────────
+    # 建立上下兩個子圖：上方佔 3/4（價格），下方佔 1/4（成交量）
+    # sharex=True：兩個子圖共享 X 軸，縮放時同步對齊
     fig, (ax1, ax2) = plt.subplots(
         2, 1,
         figsize=(12, 7),
         gridspec_kw={"height_ratios": [3, 1]},
         sharex=True,
     )
-    fig.patch.set_facecolor("#0d1117")
+    # 使用 GitHub dark 主題配色：
+    # #0d1117 = 最暗背景（圖表整體外框）
+    # #161b22 = 次暗背景（繪圖區內部）
+    # #8b949e = 灰色文字（刻度標籤、軸標題）
+    # #30363d = 邊框線
+    fig.patch.set_facecolor("#0d1117")  # 圖表最外層背景（figure 外圍）
     for ax in (ax1, ax2):
-        ax.set_facecolor("#161b22")
+        ax.set_facecolor("#161b22")    # 繪圖區背景（axes 內部）
         ax.tick_params(colors="#8b949e", labelsize=9)
         for spine in ax.spines.values():
             spine.set_edgecolor("#30363d")
 
     # ── 上方：收盤價折線 + MA ─────────────────────────
+    # #58a6ff = GitHub link blue（亮藍）；zorder=3 讓折線壓在均線上方
     ax1.plot(dates, closes, color="#58a6ff", linewidth=1.2, label="收盤價", zorder=3)
 
     # MA5 / MA20
@@ -121,8 +131,10 @@ def plot_stock_chart(symbol: str, period: str = "3mo") -> str:
     ma20_dates = [d for d, v in zip(dates, ma20) if v is not None]
     ma20_vals  = [v for v in ma20 if v is not None]
     if ma5_dates:
+        # #f0883e = GitHub warning orange（短期均線用橘色區分）
         ax1.plot(ma5_dates,  ma5_vals,  color="#f0883e", linewidth=0.9, label="MA5",  alpha=0.8)
     if ma20_dates:
+        # #bc8cff = GitHub purple（長期均線用紫色區分）
         ax1.plot(ma20_dates, ma20_vals, color="#bc8cff", linewidth=0.9, label="MA20", alpha=0.8)
 
     ax1.set_ylabel(f"價格 ({currency})", color="#8b949e", fontsize=9)
@@ -135,6 +147,8 @@ def plot_stock_chart(symbol: str, period: str = "3mo") -> str:
     ax1.set_title(title_str, color="#e6edf3", fontsize=11, pad=8, fontweight="bold")
 
     # ── 下方：成交量長條 ─────────────────────────────
+    # 收盤 >= 開盤 → 漲（綠 #3fb950），收盤 < 開盤 → 跌（紅 #f85149）
+    # width=0.8 讓長條留一點間隔，不完全填滿
     colors = ["#3fb950" if c >= o else "#f85149"
               for c, o in zip(closes, opens)]
     ax2.bar(dates, volumes, color=colors, width=0.8, alpha=0.85)

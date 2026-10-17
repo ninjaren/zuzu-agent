@@ -95,6 +95,9 @@ def browse_url(url: str) -> str:
         _domain_counts[domain] += 1
 
     # 強制間隔，避免連打同一伺服器
+    # 刻意使用第二個獨立的 with _lock 區塊，原因：
+    # 若在同一個 with 內 sleep，鎖會在 sleep 期間持續被持有，
+    # 導致其他執行緒完全無法讀寫計數器（對多執行緒情境影響大）
     with _lock:
         elapsed = time.time() - _last_browse_time
         if elapsed < BROWSE_DELAY_SECONDS:

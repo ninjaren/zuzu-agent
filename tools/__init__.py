@@ -1,4 +1,3 @@
-import json
 from . import system, web, file_ops, pdf_ops, vision, weather, stock, calculator, chart, crypto, utils, github_trending
 
 # 彙整所有模組的工具定義，格式符合 Ollama tool calling 的 JSON Schema
